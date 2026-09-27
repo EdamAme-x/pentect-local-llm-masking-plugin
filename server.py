@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+from collections import OrderedDict
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -120,6 +122,32 @@ class LocalLLM:
         return [unique[key] for key in sorted(unique)]
 
 
+class CachedDetector:
+    """Bounded process-local cache of hashes and spans, never source strings."""
+    def __init__(self, detector, max_entries=64, max_spans=16384):
+        self.detector = detector
+        self.entries = OrderedDict()
+        self.span_count = 0
+        self.max_entries = max_entries
+        self.max_spans = max_spans
+
+    def inspect(self, text):
+        key = hashlib.sha256(text.encode("utf-8")).digest()
+        if key in self.entries:
+            value = self.entries.pop(key)
+            self.entries[key] = value
+            return [dict(span) for span in value]
+        spans = self.detector.inspect(text)  # failures must never be cached
+        if len(spans) <= self.max_spans and self.max_entries > 0:
+            while self.entries and (len(self.entries) >= self.max_entries or
+                                    self.span_count + len(spans) > self.max_spans):
+                _, removed = self.entries.popitem(last=False)
+                self.span_count -= len(removed)
+            self.entries[key] = [dict(span) for span in spans]
+            self.span_count += len(spans)
+        return spans
+
+
 def handle(detector, request):
     if not isinstance(request, dict) or request.get("schema") != SCHEMA or request.get("hook") != "inspect":
         raise ValueError("invalid request")
@@ -156,7 +184,16 @@ def serve(detector):
 
 def main():
     root = Path.home() / ".pentect" / "local-llm-masking"
-    python = root / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    try:
+        state = json.loads((root / "setup.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {}
+    if not isinstance(state, dict):
+        raise SystemExit("Invalid local model setup state")
+    environment = state.get("environment", "venv")
+    if environment not in {"venv", "venv-cuda"}:
+        raise SystemExit("Invalid local model environment")
+    python = root / environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     if python.is_file() and Path(sys.prefix).resolve() != python.parent.parent.resolve():
         if os.name == "nt":
             # Windows execv does not replace the process as on POSIX. Keep the
@@ -166,10 +203,6 @@ def main():
                                     stderr=sys.stderr.buffer, creationflags=subprocess.CREATE_NO_WINDOW)
             raise SystemExit(result.returncode)
         os.execv(str(python), [str(python), str(Path(__file__).resolve()), *sys.argv[1:]])
-    try:
-        state = json.loads((root / "setup.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        state = {}
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default=state.get("checkpoint", str(root / "checkpoint")))
     parser.add_argument("--device", choices=["cpu", "cuda"], default=state.get("device", "cpu"))
@@ -179,7 +212,7 @@ def main():
     try:
         with contextlib.redirect_stdout(sys.stderr):
             detector = LocalLLM(args.model, device=args.device)
-        serve(detector)
+        serve(CachedDetector(detector))
     except Exception:
         print("Local model initialization failed; run approved plugin setup.", file=sys.stderr)
         raise SystemExit(1)

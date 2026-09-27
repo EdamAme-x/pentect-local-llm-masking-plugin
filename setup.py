@@ -37,7 +37,8 @@ def main():
         checkpoint = ROOT / ("checkpoint-" + revision)
         snapshot_download(model, revision=revision, local_dir=checkpoint,
                           allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja", "LICENSE*", "README.md"])
-        state = {"device": args.profile, "model": model, "revision": revision, "checkpoint": str(checkpoint)}
+        state = {"device": args.profile, "model": model, "revision": revision, "checkpoint": str(checkpoint),
+                 "environment": "venv-cuda" if args.profile == "cuda" else "venv"}
         # Child process starts with offline flags set before importing the runtime.
         os.environ["HF_HUB_OFFLINE"] = "1"
         code = "from server import LocalLLM; d=LocalLLM(str(checkpoint), device=DEVICE); d.inspect('No private information here.')"
@@ -49,13 +50,15 @@ def main():
         os.replace(temporary, ROOT / "setup.json")
         return
     ROOT.mkdir(parents=True, exist_ok=True)
-    python = ROOT / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    environment = ROOT / ("venv-cuda" if args.profile == "cuda" else "venv")
+    python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     if not python.exists():
-        run([sys.executable, "-m", "venv", str(ROOT / "venv")])
-    wheel_suffix = "" if sys.platform == "darwin" else ("+cu124" if args.profile == "cuda" else "+cpu")
-    torch_args = [str(python), "-m", "pip", "install", "torch==2.6.0" + wheel_suffix]
+        run([sys.executable, "-m", "venv", str(environment)])
+    wheel_suffix = "" if sys.platform == "darwin" else ("+cu128" if args.profile == "cuda" else "+cpu")
+    torch_version = "2.8.0" if args.profile == "cuda" else "2.6.0"
+    torch_args = [str(python), "-m", "pip", "install", "torch==" + torch_version + wheel_suffix]
     if sys.platform != "darwin":
-        torch_args += ["--index-url", "https://download.pytorch.org/whl/" + ("cu124" if args.profile == "cuda" else "cpu")]
+        torch_args += ["--index-url", "https://download.pytorch.org/whl/" + ("cu128" if args.profile == "cuda" else "cpu")]
     elif args.profile == "cuda":
         raise SystemExit("CUDA is not supported on macOS")
     run(torch_args)

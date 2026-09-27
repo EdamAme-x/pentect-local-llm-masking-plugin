@@ -23,13 +23,20 @@ for CPU use, or roughly 11 GB GPU memory. Only text is used by this plugin.
 pentect plugins add github:@EdamAme-x/pentect-local-llm-masking-plugin --profile cpu
 ```
 
-CPU is the default. A compatible NVIDIA GPU can use `--profile cuda`. The native
+CPU is the default. A compatible NVIDIA GPU can use `--profile cuda` (PyTorch
+2.8.0 / CUDA 12.8; CPU uses PyTorch 2.6.0). CPU and CUDA use separate managed
+environments and share checkpoints. Keeping both requires extra disk space. The native
 Command process has your OS permissions: inspect the source before approving it.
 Runtime sets `HF_HUB_OFFLINE=1`; model downloads happen only during setup.
 
-For the faster Qwen3 4B alternative, run `python setup.py --model Qwen/Qwen3-4B
---profile cpu` from a trusted checkout, then re-run the live smoke test. This
-switches the managed model used by the plugin. Normal plugin setup returns to
+For the faster Qwen3 4B alternative, run the following from a trusted checkout,
+then re-run the live smoke test:
+
+```sh
+python setup.py --model Qwen/Qwen3-4B --profile cpu
+```
+
+This switches the managed model used by the plugin. Normal plugin setup returns to
 the Gemma default. See [measured tradeoffs](BENCHMARKS.md) before switching.
 
 The manifest uses `required = true`. Malformed JSON, hallucinated substrings,
@@ -52,6 +59,10 @@ predictions, including empty lists, can still miss secrets.
 - CPU inference can exceed Pentect's 60-second per-request limit on long inputs.
   Latency on a cloud GPU is not a prediction of laptop performance.
 - The model is never asked to rewrite source text or create restoration handles.
+- Repeated text uses a process-local LRU cache bounded to 64 entries and 16,384
+  spans. It stores input hashes and ranges, not source strings, and is never
+  written to disk. Failures are not cached. Published benchmarks bypass this
+  cache and measure actual inference. Restart the agent after changing models.
 
 ## Tests and evaluation
 

@@ -104,6 +104,39 @@ Actual Windows integration was tested through project-scoped installation and
 startup bug was found and fixed before this test passed. Unit tests do not claim
 model recall, and this live check does not validate every agent integration.
 
+## Local Windows CPU follow-up
+
+Core Ultra 9 285K, four threads, FP32, Transformers 5.17.0 / PyTorch 2.6.0:
+
+| Configuration | Dataset | p50 | p95 | Coverage | Errors |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Qwen3 4B, v2 | Initial 41 cases, once | 12.27 s | 18.64 s | 96.8% | 1 |
+| Gemma 4 E2B, v1 | Japanese-heavy 18 cases, once | 7.13 s | 9.94 s | 100% | 0 |
+
+These rows use different datasets and must not be read as an apples-to-apples CPU
+ranking. They show why GPU latency must not be advertised as CPU latency. Local
+setup/smoke work overlapped part of the Qwen run. Gemma's actual Pentect request
+also took about 8.5 seconds on CPU, after a roughly 14-second cold start. It masked
+the synthetic email but missed the isolated first name "Alice" in that smoke
+sentence. A direct secret-value smoke passed. Local generation remains a heavy
+optional layer, not a low-latency replacement for deterministic matching.
+
+## Local RTX 5080 follow-up
+
+Windows, RTX 5080 16 GB, driver 576.88, PyTorch 2.8.0+cu128, Transformers 5.17.0,
+FP16, Gemma v1, one pass per case:
+
+| Dataset | p50 | p95 | Coverage | Byte precision | Errors |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Initial 41 cases | 1.71 s | 2.37 s | 96.8% | 90.0% | 0 |
+| Japanese-heavy 18 cases | 1.60 s | 2.21 s | 100% | 96.9% | 0 |
+
+This reproduced the tested RunPod predictions on the user's actual GPU. Peak
+allocated GPU memory was about 10.41 GB. The CUDA installer uses a separate
+environment so it does not overwrite the CPU runtime. This does not establish
+performance on lower-memory GPUs. Runtime adds a bounded hash/span cache for
+repeated text; **all benchmark rows above bypass that cache**.
+
 ## Sources and reproduction
 
 The dedicated RunPod resource was deleted after result retrieval and its absence

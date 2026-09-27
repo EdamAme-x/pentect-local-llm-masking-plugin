@@ -1,6 +1,8 @@
 import io
 import json
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 import server
 
@@ -11,6 +13,49 @@ class Detector:
 
 
 class BridgeTests(unittest.TestCase):
+    def test_cache_stores_only_hashes_and_independent_spans(self):
+        detector = unittest.mock.Mock()
+        detector.inspect.return_value = [{"start": 0, "end": 1, "label": "SECRET"}]
+        cache = server.CachedDetector(detector)
+        first = cache.inspect("not-retained")
+        first[0]["start"] = 99
+        self.assertEqual(cache.inspect("not-retained")[0]["start"], 0)
+        detector.inspect.assert_called_once()
+        self.assertNotIn("not-retained", repr(cache.entries))
+
+    def test_cache_is_bounded(self):
+        detector = unittest.mock.Mock()
+        detector.inspect.return_value = [{"start": 0, "end": 1}]
+        cache = server.CachedDetector(detector, max_entries=2, max_spans=1)
+        cache.inspect("a")
+        cache.inspect("b")
+        cache.inspect("a")
+        self.assertEqual(detector.inspect.call_count, 3)
+        self.assertEqual(cache.span_count, 1)
+        empty = server.CachedDetector(unittest.mock.Mock(inspect=lambda _: []), max_entries=2)
+        for text in ["a", "b", "c"]:
+            empty.inspect(text)
+        self.assertEqual(len(empty.entries), 2)
+
+    def test_cache_does_not_keep_failures(self):
+        detector = unittest.mock.Mock()
+        detector.inspect.side_effect = [ValueError("failed"), []]
+        cache = server.CachedDetector(detector)
+        with self.assertRaises(ValueError):
+            cache.inspect("x")
+        self.assertEqual(cache.inspect("x"), [])
+        self.assertEqual(detector.inspect.call_count, 2)
+
+    def test_setup_state_cannot_select_arbitrary_interpreter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            root = home / ".pentect" / "local-llm-masking"
+            root.mkdir(parents=True)
+            for state in [[], {"environment": "../../elsewhere"}, {"environment": "C:/arbitrary"}]:
+                (root / "setup.json").write_text(json.dumps(state), encoding="utf-8")
+                with patch.object(server.Path, "home", return_value=home), self.assertRaises(SystemExit):
+                    server.main()
+
     def test_utf8_and_repeated_values(self):
         spans = server.align_entities("🙂秘密/秘密", [{"text": "秘密", "label": "SECRET"}])
         self.assertEqual([(s["start"], s["end"]) for s in spans], [(4, 10), (11, 17)])
