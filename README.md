@@ -20,7 +20,7 @@ multimodal checkpoint needs substantial memory: allow 25 GB disk and 24 GB RAM
 for CPU use, or roughly 11 GB GPU memory. Only text is used by this plugin.
 
 ```sh
-pentect plugins add github:@EdamAme-x/pentect-local-llm-masking-plugin --profile cpu
+pentect plugins add github:@EdamAme-x/pentect-local-llm-masking-plugin/plugin.toml --profile cpu
 ```
 
 CPU is the default. A compatible NVIDIA GPU can use `--profile cuda` (PyTorch
