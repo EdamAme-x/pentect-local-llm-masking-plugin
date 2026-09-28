@@ -7,7 +7,7 @@ Qwen3 4B is a faster alternative with more over-masking in this screening. Neith
 is a production privacy guarantee. The very small models tested here are not
 reliable enough to replace Pentect's deterministic detectors.
 
-GLiNER PII small is a separate, opt-in official plugin candidate. It is much
+GLiNER PII small is a separate, opt-in official plugin. It is much
 faster, including on CPU, but has substantial false positives and poorer Japanese
 coverage. It is not the generative LLM backend requested for this repository.
 
@@ -103,6 +103,18 @@ Actual Windows integration was tested through project-scoped installation and
 `pentect mask`: synthetic name/email became handles. A Windows environment/cache
 startup bug was found and fixed before this test passed. Unit tests do not claim
 model recall, and this live check does not validate every agent integration.
+
+The official addition was merged in [Pentect #1504](https://github.com/EdamAme-x/pentect/pull/1504).
+A bytecode-free setup fix is tracked in [#1505](https://github.com/EdamAme-x/pentect/pull/1505).
+Remote installation and actual masking passed using this reviewed revision:
+
+```sh
+pentect plugins add github:@EdamAme-x/pentect/plugins/gliner-pii-small@a850cf6129ae4889040850148c833ee02183c209 --profile cpu
+```
+
+Tests were project-scoped and the test installations were removed afterward.
+Downloaded environments/checkpoints remain available locally; no plugin was
+enabled globally as part of this evaluation.
 
 ## Local Windows CPU follow-up
 
